@@ -91,7 +91,7 @@ OPTIONS
 AVAILABILITY
 ------------
 
-Please refer to the btrbk project page *<https://digint.ch/btrbk/>*
+Please refer to the btrbk project page <https://digint.ch/btrbk/>
 for further details.
 
 
