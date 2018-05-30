@@ -1449,9 +1449,11 @@ sub btrfs_send_receive($$$$)
     # NOTE: btrfs-progs does not delete incomplete received (garbled) subvolumes,
     #       we need to do this by hand.
     # TODO: remove this as soon as btrfs-progs handle receive errors correctly.
-    WARN "Deleting partially received (garbled) subvolume: $vol_received->{PRINT}";
     my @deleted = btrfs_subvolume_delete($vol_received, commit => "after", type => "delete_garbled");
-    unless(scalar(@deleted)) {
+    if(scalar(@deleted)) {
+      WARN "Deleted partially received (garbled) subvolume: $vol_received->{PRINT}";
+    }
+    else {
       WARN "Deletion of partially received (garbled) subvolume failed, assuming clean environment: $vol_received->{PRINT}";
     }
     return undef;
