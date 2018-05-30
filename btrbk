@@ -1810,7 +1810,7 @@ sub btrfs_mountpoint($)
   return undef unless($realpath);
 
   # get all mountpoints
-  my $host = $vol->{HOST} || "localhost";
+  my $host = $vol->{HOST} || "#localhost";
   my $mounts = $mountpoint_cache{$host};
   TRACE "mountpoint_cache " . ($mounts ? "HIT" : "MISS") . ": $host";
   unless($mounts) {
@@ -2067,7 +2067,7 @@ sub btr_tree($$$$)
   die unless($vol_root_id >= 5);
 
   # return parsed tree from %spec_cache if present
-  my $vol_host_spec = ($vol->{HOST} // "localhost") . ':' . $spec;
+  my $vol_host_spec = ($vol->{HOST} // "#localhost") . ':' . $spec;
   my $cached_tree = $spec_cache{$vol_host_spec};
   TRACE "spec_cache " . ($cached_tree ? "HIT" : "MISS") . ": $vol_host_spec";
   if($cached_tree) {
