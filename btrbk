@@ -79,6 +79,7 @@ my %config_options = (
   snapshot_name               => { c_default => 1,       accept_file => { name_only => 1 }, context => [ "subvolume" ], deny_glob_context => 1 },   # NOTE: defaults to the subvolume name (hardcoded)
   snapshot_create             => { default => "always",  accept => [ "no", "always", "ondemand", "onchange" ], context => [ "root", "volume", "subvolume" ] },
   incremental                 => { default => "yes",     accept => [ "yes", "no", "strict" ] },
+  incremental_resolve         => { default => "volume_mountpoint", accept => [ "snapshot_dir", "volume_mountpoint", "all_mountpoints" ] },
   preserve_day_of_week        => { default => "sunday",  accept => [ (keys %day_of_week_map) ] },
   preserve_hour_of_day        => { default => 0,         accept => [ (0..23) ]  },
   snapshot_preserve           => { default => undef,     accept => [ "no" ], accept_preserve_matrix => 1, context => [ "root", "volume", "subvolume" ], },
@@ -2767,6 +2768,27 @@ sub vinfo_resolved($$)
 }
 
 
+# returns vinfo if $node is below any mountpoint of $vol
+# NOTE: btrfs-progs has a bug when parent is not on same mountpoint as source:
+# https://github.com/kdave/btrfs-progs/issues/96
+sub vinfo_resolved_all_mountpoints($$)
+{
+  my $node = shift || die;
+  my $vol = shift || die;
+  my $tree_root = $vol->{node}{TREE_ROOT};
+  foreach (@{$tree_root->{MOUNTPOINTS}}) {
+    my $mnt_path = $_->{file};
+    my $mnt_node = $tree_root->{ID_HASH}{$_->{subvolid}};
+    next unless($mnt_node);
+    my $mnt_vol = vinfo($vol->{URL_PREFIX} . $mnt_path, $vol->{CONFIG});
+    $mnt_vol->{node} = $mnt_node;
+    TRACE "vinfo_resolved_all_mountpoints: trying mountpoint: $mnt_vol->{PRINT}";
+    my $vinfo = vinfo_resolved($node, $mnt_vol);
+    return $vinfo if($vinfo);
+  }
+  return undef;
+}
+
 sub vinfo_subvol($$)
 {
   my $vol = shift || die;
@@ -3036,7 +3058,25 @@ sub get_best_parent($$;@)
   my $droot = shift || die;
   my %opts = @_;
   my $fallback_btrbk_basename = $opts{fallback_btrbk_basename};
-  my $resolve_root = $opts{resolve_root} || $svol->{VINFO_MOUNTPOINT};
+  my $resolve_root = $opts{resolve_root};  # if set, override "incremental_resolve" config option
+
+  my $resolve_all_mountpoints;
+  unless($resolve_root) {
+    my $incremental_resolve = config_key($svol, "incremental_resolve");
+    if($incremental_resolve eq "snapshot_dir") {
+      $resolve_root = vinfo_snapshot_root($svol);
+    }
+    elsif($incremental_resolve eq "volume_mountpoint") {
+      $resolve_root = $svol->{VINFO_MOUNTPOINT};
+    }
+    elsif($incremental_resolve eq "all_mountpoints") {
+      $resolve_root = $svol->{VINFO_MOUNTPOINT};
+      $resolve_all_mountpoints = 1;
+    }
+    else {
+      die "illegal value for incremental_resolve configuration option: $incremental_resolve";
+    }
+  }
 
   TRACE "get_best_parent: resolving best common parent for subvolume: $svol->{PATH}  (droot=$droot->{PRINT})";
   my $related_nodes = get_related_subvolume_nodes($svol);
@@ -3045,6 +3085,9 @@ sub get_best_parent($$;@)
   foreach my $child_node (@$related_nodes) {
     next if($child_node->{id} == $svol->{node}{id}); # skip self
     my $child = vinfo_resolved($child_node, $resolve_root);
+    if((not $child) && $resolve_all_mountpoints) { # child_node is not under $resolve_root
+      $child = vinfo_resolved_all_mountpoints($child_node, $svol);
+    }
     next unless($child);
     my @receive_target_nodes = _receive_target_nodes($droot, $child);
     if(scalar @receive_target_nodes) {
